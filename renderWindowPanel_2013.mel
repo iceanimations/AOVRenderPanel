@@ -3722,23 +3722,7 @@ proc createLayout(string $editor)
 	 separator -height $iconSize -horizontal false -style single 
                  renderTargetSeparator;
 
-	 if (currentRenderer() == "arnold")
-	 {
-	   optionMenu -height $iconSize -label " AOV" -annotation "Select the AOV" "aovsListMenu";
-	 }
-
-     string $aovs[] = {"aiAOV_beauty"};
-     $aovs = stringArrayCatenate ($aovs, `ls -et aiAOV`);
-     
-     for ($i=0; $i < size($aovs); $i += 1)
-     {
-         string $tokens[];
-         tokenize $aovs[$i] "_" $tokens;
-         menuItem -label $tokens[1];
-         
-     }
-     python("import maya.cmds as mc\nmc.button('myBadassBtn', p='renderViewToolbar')");
-
+     python("execfile('r:/Pipe_Repo/Users/Hussain/scripts/arnoldmenu.py')");
     global string $gRenderPassLockUnlockImage[];
     int $forceRender = getRenderTargetForceDependenciesRender();
     iconTextButton -i1 $gRenderPassLockUnlockImage[$forceRender]
