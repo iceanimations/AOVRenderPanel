@@ -3727,11 +3727,7 @@ proc createLayout(string $editor)
 
 	 separator -height $iconSize -horizontal false -style single 
                  renderTargetSeparator;
-	 if (currentRenderer() == "arnold")
-	 {
-	   optionMenu -height $iconSize -label "AOV" -annotation "Select the AOV"; 
-	 }
-	 
+     python("execfile('arnoldmenu')");	 
 
     global string $gRenderPassLockUnlockImage[];
     int $forceRender = getRenderTargetForceDependenciesRender();

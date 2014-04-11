@@ -1,4 +1,4 @@
-// Copyright (C) 1997-2011 Autodesk, Inc., and/or its licensors.
+// Copyright (C) 1997-2014 Autodesk, Inc., and/or its licensors.
 // All rights reserved.
 //
 // The coded instructions, statements, computer programs, and/or related
@@ -42,7 +42,6 @@
 //
 // - $editor is the name of the scripted panel object which is the
 // render view panel
-
 
 global int $gIprTuningPaused = false;
 
@@ -155,7 +154,7 @@ global proc setRenderOptionVars()
 // Description:  This procedure returns true if IPR is running by
 //  the current renderer, and false otherwise.
 //
-proc int isRunningIpr()
+global proc int isRunningIpr()
 {
 
     string $isRunningIprProc =
@@ -325,6 +324,7 @@ proc string changeWorkspaceDir(string $newDirType)
 //
 proc int[] getTestResolution( string $panel )
 {
+
 	int		$res[2] = { 640, 480 };
 
 	if( `optionVar -exists renderViewTestResolution` )
@@ -368,6 +368,7 @@ proc int[] getTestResolution( string $panel )
             }
 		}
 	}
+
 
 	return $res;
 }
@@ -962,6 +963,7 @@ global proc renderWindowRenderCamera(
 	// disable render view blending
 	renderWindowEditor -e -blendMode -1 $editor;
 	renderWindowEditor -e -compDisplay 0 $editor;
+	
 
 	string	$cameraPanel	= `getCameraPanel( $camera )`;
 	int 	$resolution[] 	= `getTestResolution( $cameraPanel )`;
@@ -974,7 +976,8 @@ global proc renderWindowRenderCamera(
 
 	// Determine the resolution to render at.
 	//
-	if (($renderMode == "renderRegion"))
+	if ( ($renderMode == "renderRegion") 
+		)
 	{
 		setAttr ($globals[0] + ".useRenderRegion") true;
 
@@ -1121,7 +1124,8 @@ global proc renderWindowRenderCamera(
           $gRenderViewRenderTarget = $oldRenderTarget;
           editRenderLayerGlobals("-currentRenderLayer", $renderLayer);
         }
-        else {
+        else
+        {
           if ( $cCount == 2 )
             {
               renderWindowEditor -edit -viewImageCount 2 $editor;
@@ -1153,6 +1157,59 @@ global proc renderWindowRender(
 	string 	$editor)
 {
 	renderWindowRenderCamera($renderMode, $editor, "");
+}
+
+
+// 
+//  Return whether VP2 is used as renderer for current active viewport. 
+//	If an active viewport can't be found, check the default viewport setting in the preferences
+//
+global proc int isActiveViewViewport20()
+{
+	global string $gMainPane;
+	int $activeViewFound = 0;
+	int $useVP2 = 0;
+	
+	//
+	//  First try to find the active viewport
+	//
+	if ($gMainPane != "") 
+	{
+		$mainPaneCtls = `paneLayout -q -ca $gMainPane`;
+		$nArr = size($mainPaneCtls);
+		for ($i = 0; $i < $nArr; $i++) 
+		{
+			$panelName = `getPanel -containing $mainPaneCtls[$i]`;
+			if ("" != $panelName) 
+			{
+				if ("modelPanel" == `getPanel -to $panelName`) 
+				{
+					$obscured = `control -q -io $mainPaneCtls[$i]`;
+					if (!$obscured) 
+					{
+						$modelEd = `modelPanel -q -modelEditor $panelName`;
+						if (`modelEditor -q -activeView $modelEd`)
+						{
+							$activeViewFound = 1;
+
+							string $rendererUsed = `modelEditor -q -rnm $modelEd`;
+							$useVP2 = (`strcmp $rendererUsed "vp2Renderer"` == 0);
+
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if (!$activeViewFound)
+	{
+		$defaultRenderer = `optionVar -q viewportRenderer`;
+		$useVP2 = ($defaultRenderer == 2);
+	}
+
+	return $useVP2;
 }
 
 //
@@ -1207,6 +1264,17 @@ global proc renderWindowTakeSnapshot
 	formLayout -e -af renderWindowTMPModelEditor right $right $mainForm;
 	formLayout -e -af renderWindowTMPModelEditor top 0 $mainForm;
 	formLayout -e -af renderWindowTMPModelEditor bottom $bottom $mainForm;
+	
+	int $useVP2 = isActiveViewViewport20();
+
+	// Switch to use VP2 if required
+	if ($useVP2)
+	{
+		setRendererInModelPanel vp2Renderer renderWindowTMPModelEditor;
+		string $rendererUsed = `modelEditor -q -rnm renderWindowTMPModelEditor`;
+		// Check whether VP2 is successfully set
+		$useVP2 = (`strcmp $rendererUsed "vp2Renderer"` == 0);
+	}
 
 	string	$renderPanel = `getRenderWindowPanel`;
 
@@ -1271,9 +1339,9 @@ global proc renderWindowTakeSnapshot
 			renderWindowEditor -e -nextViewImage $renderPanel;
 		}
 
-		// Bug 340452. We need to force a refresh here in order to be sure
-		// the temporary model editor is ready for a snapshot.
-		refresh;
+			// Bug 340452. We need to force a refresh here in order to be sure
+			// the temporary model editor is ready for a snapshot.
+			refresh;
 		// Take the snapshot
 		renderWindowEditor -e -snp renderWindowTMPModelEditor $resX $resY $renderPanel;
 
@@ -1377,7 +1445,6 @@ global proc renderWindowMenuCommand(string $command, string $editor)
 		renderWindowRefreshMenu("file", $editor);
 		renderWindowRefreshLayout($editor);
 		break;
-
 		case "saveImage":
 		saveImage($editor);
 		break;
@@ -1389,7 +1456,6 @@ global proc renderWindowMenuCommand(string $command, string $editor)
 		case "saveIprFile":
 		saveIprFile($editor);
 		break;
-
 		case "keepImageInRenderView":
 		int $currImage = `renderWindowEditor -q -displayImage $editor`;
 		if ($currImage < 0)
@@ -1844,6 +1910,16 @@ proc refreshFileMenu(string $editor, string $menuType)
 		string $passes[] = `listConnections -type "renderPass" ($gRenderViewLastRenderLayer + ".renderPass")`;
 		$enable = (size($passSets) > 0 || size($passes) > 0);
 	}
+
+	// Give third parties a chance to enable the render pass menu item
+	int $requestsToEnableRenderPassMenuOfRenderView[] = `callbacks -executeCallbacks -hook "enableRenderPassMenuOfRenderView"`;
+	for ($requestToEnableRenderPassMenuOfRenderView in $requestsToEnableRenderPassMenuOfRenderView) {
+		if($requestToEnableRenderPassMenuOfRenderView == 1) {
+			$enable = 1;
+			break;
+		}
+	}
+	
 	menuItem -edit
 		-enable $enable
 		($editor + $menuType + "loadPassFileItem");
@@ -1866,6 +1942,7 @@ proc refreshFileMenu(string $editor, string $menuType)
 			-enable				false
 			($editor + "renderDiagnosticsItem");
 	}
+
 	// If the renderview is currently looking at the non-buffered image, dim
 	// the "Remove Image from Render View" item and
 	// the "Remove All Images from Render View" item.
@@ -1970,6 +2047,10 @@ global proc renderWindowCreateRenderPassMenu(string $editor, string $menuType)
 					-command ("renderWindowRenderPassMenuCallback \"" + encodeString($filePath) + "\" \"" + $channelName +"\"");
 			}
 		}
+
+		// Give third parties a chance to add items to the render pass menu of the render view
+		callbacks -executeCallbacks -hook "addItemsToRenderPassMenuOfRenderView";
+
 	}
 }
 }
@@ -2217,8 +2298,10 @@ proc createRenderMenu(string $editor, string $menuType)
 proc refreshRenderMenu(string $editor, string $menuType)
 {
 	setParent -menu ($editor + $menuType + "RenderMenu");
+
 	menuItem -e -checkBox (`optionVar -q renderViewRenderAllLayers`)
 		($editor + "renderSelectedLayer");
+
 	menuItem -e -checkBox (`optionVar -q renderViewRenderSelectedObj`)
 		($editor + "renderSelectedObjItem");
 }
@@ -2517,11 +2600,11 @@ proc buildOptionsMenu(string $editor, string $menuType)
 	//
 	int $i;
 	string $rendererUIName = "";
-
+	string $annotation = getRunTimeCommandAnnotation("RenderGlobalsWindow");
 	menuItem
 			-enableCommandRepeat false
-			-label (uiRes("m_renderWindowPanel.kRenderSettings"))
-			-annotation (uiRes("m_renderWindowPanel.kRenderSettingsChangeAnnot"))
+			-label (localizedUIMisc("Render Settings") + " ...")
+			-annotation $annotation
 			-command "unifiedRenderGlobalsWindow";
 
 	menuItem
@@ -2789,9 +2872,9 @@ proc createViewMenu(string $editor, string $menuType)
 	menuItem -divider true;
 
 	menuItem
-		-label		(uiRes("m_renderWindowPanel.kGrabSwatchtoHypershadeVisor"))
-		-command ("renderWindowMenuCommand grabSwatch " + $editor)
+		-label		(uiRes("m_renderWindowPanel.kGrabSwatchtoHypershadeVisor"))		
 		-annotation (uiRes("m_renderWindowPanel.kGrabSwatchHyperVisorAnnot"))
+        -command ("renderWindowMenuCommand grabSwatch " + $editor)
 		($editor + "grabSwatchItem");
 
 	setParent -menu ..; // from View menu
@@ -2815,7 +2898,7 @@ proc refreshViewMenu(string $editor, string $menuType)
 	} else {
 		menuItem -edit
 				-label (uiRes("m_renderWindowPanel.kGrabSwatchtoHyperVisor"))
-			-annotation (uiRes("m_renderWindowPanel.kGrabSwatchtoHyperVisorAnnot"))
+                -annotation (uiRes("m_renderWindowPanel.kGrabSwatchtoHyperVisorAnnot"))
 			($editor + "grabSwatchItem");
 	}
 }
@@ -2830,8 +2913,6 @@ proc refreshDisplayMenu(string $editor, string $menuType)
     int $isBlue  = 0;
     int $isLum   = 0;
     int $isMask  = 0;
-    int $is8bit  = 1;
-    int $is32bit = 0;
     string $displayStyle = `renderWindowEditor -q -displayStyle $editor`;
 	switch ($displayStyle) {
 		case "lum":  $isLum = 1; break;
@@ -2850,16 +2931,6 @@ proc refreshDisplayMenu(string $editor, string $menuType)
 		else
 			$isBlue = 1;
 	}
-
-    if(`optionVar -exists renderViewImageFormat`)
-    {
-         if (`optionVar -q renderViewImageFormat` == 1)
-         {
-            $is8bit = 0;
-            $is32bit = 1;
-         }
-    }
-
 
 	// Update the RGB / Mask icons
 	if (`iconTextButton -ex rvMaskButton`) {
@@ -2920,8 +2991,7 @@ proc refreshDisplayMenu(string $editor, string $menuType)
 			menuItem -edit -radioButton $isRGB   ($editor + "allPlanesItem");
 			menuItem -edit -radioButton $isLum   ($editor + "luminanceItem");
 			menuItem -edit -radioButton $isMask  ($editor + "maskPlaneItem");
-			menuItem -edit -radioButton $is8bit  ($editor + "bitDepth8bitItem");
-			menuItem -edit -radioButton $is32bit ($editor + "bitDepth32bitItem");
+
 			// Update the dithered menuItem
 			//
 			int $dithered = !`renderWindowEditor -query -singleBuffer $editor`;
@@ -2931,7 +3001,6 @@ proc refreshDisplayMenu(string $editor, string $menuType)
 			//
 			int $isTool = isToolbarDisplayed();
 			menuItem -edit -checkBox $isTool ($editor + "toolbarItem");
-
 			int $rigsSupported = multipleCamerasSupported();
 			if ( $rigsSupported  )
 			{
@@ -3012,28 +3081,6 @@ proc refreshDisplayMenu(string $editor, string $menuType)
 	}
 }
 
-global proc updateRenderViewBitDepth(int $newFormat)
-{
-    setParent `getRenderWindowPanel`;
-
-    int $oldFormat = 0; // default
-
-    if(`optionVar -exists renderViewImageFormat`)
-    {
-        $oldFormat = `optionVar -q renderViewImageFormat`;
-    }
-
-    if($newFormat != $oldFormat)
-    {
-        confirmDialog -title (uiRes("m_renderWindowPanel.kRenderViewFormatChangeTitle"))
-                    -messageAlign "left"
-            -message (uiRes("m_renderWindowPanel.kRenderViewFormatChangeMessage"))
-            -button (uiRes("m_renderWindowPanel.kOKbutton"));
-    }
-
-    optionVar -iv renderViewImageFormat $newFormat;
-}
-
 // Update pop-up color mask menu before posting
 global proc refreshRenderViewPlaneMenu( string $editor )
 {
@@ -3045,7 +3092,6 @@ global proc refreshRenderViewPlaneMenu( string $editor )
 		menuItem -edit -enable true allPlanesMenuRed;
 		menuItem -edit -enable true allPlanesMenuGreen;
 		menuItem -edit -enable true allPlanesMenuBlue;
-
 		int $rigsSupported = multipleCamerasSupported();
 		if ( $rigsSupported  )
 		{
@@ -3162,21 +3208,6 @@ proc createDisplayMenu(string $editor, string $menuType)
 
 	menuItem -divider true;
 
-
-    string $bitCol = "renderWindowBitDepthCollection" + $menuType;
-    radioMenuItemCollection	$bitCol;
-
-	string $upd = ";refreshRenderViewIcons(\""+$editor+"\")";
-	menuItem -label (uiRes("m_renderWindowPanel.kEightBit")) -radioButton false -collection $bitCol
-		-command ("updateRenderViewBitDepth 0" + $upd )
-		($editor + "bitDepth8bitItem");
-
-	menuItem -label (uiRes("m_renderWindowPanel.kThirtyTwoBit")) -radioButton false -collection $bitCol
-		-command ("updateRenderViewBitDepth 1" + $upd )
-		($editor + "bitDepth32bitItem");
-
-	menuItem -divider true;
-
     menuItem -label (uiRes("m_renderWindowPanel.kColorMgt"))
         -command
             "showEditor defaultViewColorManager;"
@@ -3271,7 +3302,9 @@ proc createDisplayMenu(string $editor, string $menuType)
         {
             $choiceValue = `optionVar -query $choiceName`;
         }
-    	menuItem -label (uiRes("m_renderWindowPanel.kRenderTime")) -checkBox $choiceValue
+    	menuItem 
+		-label (uiRes("m_renderWindowPanel.kRenderTime")) 
+		-checkBox $choiceValue
     		-command		("renderWindowMenuCommand ShowRenderTime " + $editor)
             -annotation   (uiRes("m_renderWindowPanel.kCheckedunchckedrenderAnnot"))
             ($editor + "renderTimeItem");
@@ -3361,7 +3394,6 @@ global proc renderWindowCreateCameraSubmenu(
 	string	$editor)
 {
 	popupMenu -edit -deleteAllItems $subMenu;
-
 	// Set up the stereo plug-in
 	if ( !`pluginInfo -query -loaded "stereoCamera"` )
 		loadPlugin -qt "stereoCamera";
@@ -3388,9 +3420,10 @@ global proc renderWindowCreateCameraSubmenu(
 	if( size($camera) != 0 )
 	{
 		string $currentCam = $camera;
-		if ($iprMenu == 0) {
+		if ($iprMenu == 0)
+		{
 			$camRig = `renderWindowEditor -q -currentCameraRig $editor`;
-		if (size($camRig))
+			if (size($camRig))
 				$currentCam = $camRig;
 		}
 		string $label = (uiRes("m_renderWindowPanel.kCurrentCam"));
@@ -3410,14 +3443,13 @@ global proc renderWindowCreateCameraSubmenu(
 	string $stereoPerspsChildren[];
 	int $numMono = 0;
 	int $numStereo = 0;
-
 	int $wantStereo = 0;
 	if ($iprMenu == 0)
 	{
 		$wantStereo = multipleCamerasSupported();
 	}
 
-	// List all the mono cameras. If stereo is not eanbled for this
+	// List all the mono cameras. If stereo is not enabled for this
 	// menu, consider all cameras as mono.
 	for( $camera in $persps1 )
 	{
@@ -3426,7 +3458,7 @@ global proc renderWindowCreateCameraSubmenu(
 		{
 			menuItem -label $camera -command ($command + $camera);
 		}
-			}
+	}
 
 	// Build the stereo rig menus
 	if ($wantStereo) {
@@ -3465,27 +3497,14 @@ global proc renderWindowCreateCameraSubmenu(
 //
 global proc buildRenderViewContextHelpItems(string $nameRoot, string $menuParent)
 {
-	menuItem -label (uiRes("m_renderWindowPanel.kHelponRenderView"))
+	menuItem 
+		-label (uiRes("m_renderWindowPanel.kHelponRenderView"))
 		-enableCommandRepeat false
 		-command "showHelp RenderView";
 }
 
 global proc renderWindowRefreshMenu(string $menu, string $editor)
 {
-
-	if(`about -mac`){
-		string  $panel = `getRenderWindowPanel`;
-		string $renderPanels[] = `getPanel -vis`;
-		int $count;
-		for($count = 0; $count < size($renderPanels); $count++){
-			if($renderPanels[$count] == $panel){
-				break;
-			}
-		}
-		if ($count == size($renderPanels)){
-			return;
-		}
-	}
 	if ($menu == "file")
 	{
 		refreshFileMenu($editor, "menubar");
@@ -3620,6 +3639,7 @@ proc createLayout(string $editor)
 
 	 separator -height $iconSize -horizontal false -style single rvSeparator2;
 
+
 	string $openrenderAnnot = (uiRes("m_renderWindowPanel.kOpenRenderAnnot"));
 	 iconTextButton -i1 "rvRenderGlobals.png" -width $iconSize -height $iconSize
 		 -annotation (`format -s $renUIName $openrenderAnnot`)
@@ -3718,11 +3738,88 @@ proc createLayout(string $editor)
 			 optionMenu -edit -select ($i+1) rendererSelOptionMenu;
 		 }
 	 }
-     
+
 	 separator -height $iconSize -horizontal false -style single 
                  renderTargetSeparator;
-
      python("execfile('arnoldmenu')");
+        // When we open the renderview, we reset the gamma and exposure toggles
+        resetRVTogleStates();
+        resetColorManagementControlRange();
+
+        rowLayout -numberOfColumns 3
+                  -columnAttach3 "both" "both" "both"
+        renderExposureGroup;
+
+            iconTextButton
+                -version "2015"
+                -i1 "rvExposureControlIcon.png"
+                -width $iconSize
+                -height $iconSize
+                -marginWidth 0
+                -marginHeight 0
+                -command ("toggleRenderViewExposure")
+                exposureRenderViewImageButton;
+            
+            floatField
+                -value 0.0
+                -precision 2
+                -width 40
+                -step 0.1
+                -changeCommand "resetRVExposureTogleState; updateRenderViewExposureSlider"
+                -dragCommand "resetRVExposureTogleState; updateRenderViewExposureSlider"
+                exposureRenderViewFieldItem;
+                
+            floatSlider
+                -value 0.5
+                -height 27
+                -width 80
+                -min 0.0 -max 1.0
+                -changeCommand "resetRVExposureTogleState; updateRenderViewExposureField"
+                -dragCommand "resetRVExposureTogleState; updateRenderViewExposureField"
+                exposureRenderViewSliderItem;
+
+        setParent ..;
+
+        rowLayout -numberOfColumns 3
+                  -columnAttach3 "both" "both" "both"
+        renderGammaGroup;
+
+            iconTextButton
+                -version "2015"
+                -i1 "rvGammaControlIcon.png"
+                -width $iconSize
+                -height $iconSize
+                -marginWidth 0
+                -marginHeight 0
+                -command ("toggleRenderViewGamma")
+                gammaRenderViewImageButton;
+
+            floatField
+                -value 1.0
+                -minValue 0.0
+                -precision 2
+                -width 40
+                -step 0.1
+                -changeCommand "resetRVGammaTogleState; updateRenderViewGammaSlider"
+                -dragCommand "resetRVGammaTogleState; updateRenderViewGammaSlider"
+                gammaRenderViewFieldItem;
+                
+            floatSlider
+                -value 0.5
+                -height 27
+                -width 80
+                -min 0.0 -max 1.0
+                -changeCommand "resetRVGammaTogleState; updateRenderViewGammaField"
+                -dragCommand "resetRVGammaTogleState; updateRenderViewGammaField"
+                gammaRenderViewSliderItem;
+            
+        setParent ..;
+            
+
+        updateRenderViewGammaState();
+        updateRenderViewExposureState();
+
+
     global string $gRenderPassLockUnlockImage[];
     int $forceRender = getRenderTargetForceDependenciesRender();
     iconTextButton -i1 $gRenderPassLockUnlockImage[$forceRender]
@@ -3734,8 +3831,9 @@ proc createLayout(string $editor)
 
      // Show the current render layer.
      //
-     text -height $iconSize -label "" -align "left" currentRenderLayerName;
-     updateRenderViewCurrentRenderLayerLabel($editor);
+     string $currentRenderLayer = currentRenderLayerLabel();
+     text -height $iconSize -label $currentRenderLayer -align "left" currentRenderLayerName;
+
      scriptJob -event renderLayerManagerChange ("updateRenderViewForRenderLayerChange "+$editor)
         -parent $editor;
      scriptJob -event renderLayerChange ("updateRenderViewCurrentRenderLayerLabel "+$editor)
@@ -3794,7 +3892,6 @@ proc createLayout(string $editor)
 		 -attachControl "pauseIprButton"	"right"  $margin "iprMemEstText"
 		 -attachForm 	"pauseIprButton"	"top"	 $margin
 		 -attachForm 	"pauseIprButton"	"bottom" $margin
-
 		 renderViewToolbarForm;
 	 setParent ..;
 
@@ -3831,20 +3928,6 @@ proc createLayout(string $editor)
 		scrollBarForm;
 	setParent ..;
 
-	//	Needed on Mac :
-	//	Add an offset for right attachment of the scrollBar.
-	//	This prevents resize handle of window from overlapping
-	//	onto the scrollbar's up/down arrows
-	//
-	int $scrollBarRightSpacing, $editorFormBottomSpacing;
-	if (`about -mac`) {
-		$scrollBarRightSpacing = 12;
-		$editorFormBottomSpacing = 10;
-	} else {
-		$scrollBarRightSpacing = 0;
-		$editorFormBottomSpacing = 0;
-	}
-
 	formLayout
 		-edit
 
@@ -3856,10 +3939,10 @@ proc createLayout(string $editor)
 		-attachForm		"editorForm"		"left"		0
 		-attachForm		"editorForm"		"right"		0
 		-attachControl	"editorForm"		"top"		0 "renderViewToolbarForm"
-		-attachControl	"editorForm"		"bottom"	$editorFormBottomSpacing "scrollBarForm"
+		-attachControl	"editorForm"		"bottom"	0 "scrollBarForm"
 
 		-attachForm		"scrollBarForm"		"left"		0
-		-attachForm		"scrollBarForm"		"right"		$scrollBarRightSpacing
+		-attachForm		"scrollBarForm"		"right"		0
 		-attachNone		"scrollBarForm"		"top"
 		-attachForm		"scrollBarForm"		"bottom"	0
 
@@ -3958,6 +4041,7 @@ proc renderWindowRendererSpecificRefresh(string $panel)
     //
 	renderWindowRefreshMenu("ipr",$panel);
 
+
 	string $renderers[] = `renderer -query -namesOfAvailableRenderers`;
 
 	// Check for any updates in the renderer list
@@ -4006,26 +4090,11 @@ proc renderWindowRendererSpecificRefresh(string $panel)
     // Disable the render target menu if the current renderer doesn't
     // support it.
     setRenderTargetSupport();
-
     setParent $oldParent;
 }
 
 global proc renderWindowRefreshLayout(string $editor)
 {
-
-	if(`about -mac`){
-		string  $panel = `getRenderWindowPanel`;
-		string $renderPanels[] = `getPanel -vis`;
-		int $count;
-		for($count = 0; $count < size($renderPanels); $count++){
-			if($renderPanels[$count] == $panel){
-				break;
-			}
-		}
-		if ($count == size($renderPanels)){
-			return;
-		}
-	}
 	setParent $editor;
 
 	formLayout -edit -manage `isToolbarDisplayed` renderViewToolbarForm;
@@ -4050,35 +4119,6 @@ global proc renderWindowRefreshLayout(string $editor)
 		intScrollBar -edit -manage true
 			-min -1 -max ($numImages - 1) -value $currImage
 			scrollBar;
-
-		//	Fix for Bug #147008
-		//	Adjust the editor form bottom,
-		//	so that it does not overlap onto window resize handle
-		//
-		if(`about -mac`)
-		{
-			int $scrollBarRightSpacing = 12 ;
-
-			formLayout
-			-edit
-
-			-attachForm		"renderViewToolbarForm"		"left"		0
-			-attachForm		"renderViewToolbarForm"		"right"		0
-			-attachForm		"renderViewToolbarForm"		"top"		0
-			-attachNone		"renderViewToolbarForm"		"bottom"
-
-			-attachForm		"editorForm"		"left"		0
-			-attachForm		"editorForm"		"right"		0
-			-attachControl	"editorForm"		"top"		0 "renderViewToolbarForm"
-			-attachControl	"editorForm"		"bottom"	0 "scrollBarForm"
-
-			-attachForm		"scrollBarForm"		"left"		0
-			-attachForm		"scrollBarForm"		"right"		$scrollBarRightSpacing
-			-attachNone		"scrollBarForm"		"top"
-			-attachForm		"scrollBarForm"		"bottom"	0
-
-			renderViewForm;
-		 }
 	}
 	else
 	{
@@ -4089,38 +4129,7 @@ global proc renderWindowRefreshLayout(string $editor)
 			-edit
 			-manage	false
 			scrollBar;
-
-		//	Fix for Bug #147008
-		//	Adjust the editor form bottom,
-		//	so that it does not overlap onto window resize handle
-		//
-		if(`about -mac`)
-		{
-			int $scrollBarRightSpacing = 12 ;
-			int $editorFormBottomSpacing = 10 ;
-
-			formLayout
-			-edit
-
-			-attachForm		"renderViewToolbarForm"		"left"		0
-			-attachForm		"renderViewToolbarForm"		"right"		0
-			-attachForm		"renderViewToolbarForm"		"top"		0
-			-attachNone		"renderViewToolbarForm"		"bottom"
-
-			-attachForm		"editorForm"		"left"		0
-			-attachForm		"editorForm"		"right"		0
-			-attachControl	"editorForm"		"top"		0 "renderViewToolbarForm"
-			-attachControl	"editorForm"		"bottom"	$editorFormBottomSpacing "scrollBarForm"
-
-			-attachForm		"scrollBarForm"		"left"		0
-			-attachForm		"scrollBarForm"		"right"		$scrollBarRightSpacing
-			-attachNone		"scrollBarForm"		"top"
-			-attachForm		"scrollBarForm"		"bottom"	0
-
-			renderViewForm;
-		 }
 	}
-
 }
 
 //---------------------------------------------------------------------------//
@@ -4188,7 +4197,6 @@ global proc renderIntoNewWindow(string $renderMode)
 				//
 				$editor = $currentPanel + "Editor";
 				$camera = `modelEditor -query -camera $editor`;
-
 				// Get rig if not doing IPR rendering
 				if ($renderMode != "iprRender")
 				{
@@ -4259,7 +4267,6 @@ global proc renderIntoNewWindow(string $renderMode)
 				//
 				$editor = $visiblePanels[$modelPanelIndex] + "Editor";
 				$camera = `modelEditor -query -camera $editor`;
-
 				if ($renderMode != "iprRender")
 				{
 					$cameraRig = `getParentCameraRig $camera`;
@@ -4458,7 +4465,7 @@ global proc renderWindowCheckAndRenderRegion
 	string	$renderPanel = `getRenderWindowPanel`;
 	int		$snapped = 0;
 
-	if (!isRunningIpr() ) {
+	if ( !isRunningIpr() ) {
 		if( `renderWindowEditor -q -currentCamera $renderPanel` == "" )
 		{
 			//
@@ -4507,10 +4514,12 @@ global proc renderWindowCheckAndRenderRegion
 
 		// We can't autoRenderRegion if ipr is on
 		if( `optionVar -exists renderViewAutoRenderRegion` &&
-			`optionVar -query renderViewAutoRenderRegion` != 0 &&
-			!isRunningIpr())
+			`optionVar -query renderViewAutoRenderRegion` != 0 
+			&& !isRunningIpr()
+			)
 		{
 				string $editor = `showRenderView`;
+
 				renderWindowRenderRegion($editor);
 		}
 
@@ -4555,7 +4564,7 @@ global proc string mayaSoftwareIprRender(int $width, int $height, int $doShadows
 //			and if so, calls the render region procedure for the current renderer.
 //	Returns: None
 //
-global proc renderWindowRenderRegion(string $editor)
+global proc renderWindowRenderRegionCommon(string $editor)
 {
 	string $renderer = currentRenderer();
 
@@ -4596,6 +4605,17 @@ global proc renderWindowRenderRegion(string $editor)
 	    warning (`format -s $renderer $renderWarn`);
 	}
 }
+
+//
+// Description:
+//			Entry point for render region command called from UI
+//	Returns: None
+//
+global proc renderWindowRenderRegion(string $editor)
+{
+	renderWindowRenderRegionCommon($editor);
+}
+
 
 //
 // Description:
@@ -4696,7 +4716,7 @@ global proc updateRenderWindowPanelRendererSpecificUI()
         // Stop all Ipr render.
         //
         stopIprRendering($panel);
-        renderWindowRendererSpecificRefresh($panel);
+		renderWindowRendererSpecificRefresh($panel);
 	}
 }
 
@@ -4749,7 +4769,7 @@ global proc updateRenderViewCurrentRenderTarget(string $panel)
 global proc updateRenderViewForRenderLayerChange(string $panel)
 {
     updateRenderViewCurrentRenderLayerLabel($panel);
-    stopIprRendering($panel);
+	stopIprRendering($panel);
 }
 
 // Description: Switch stereo display mode
@@ -4767,7 +4787,6 @@ global proc setStereoMode( string $editor, string $mode )
 	else
 		renderWindowEditor -edit -stereoMode $mode $editor;
 }
-
 
 
 // Register the procedure responsible for updating all renderer
