@@ -6,6 +6,7 @@ SPRT_FOR = map(str,[2013,
                     2014,
                     2015])
 VER = pc.about(v = True)
+
 for ver in SPRT_FOR:
     if ver in VER:
         renderWindowPanel = op.join(op.dirname(arnoldmenu.__file__ ),
