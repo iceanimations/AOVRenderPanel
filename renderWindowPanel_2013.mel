@@ -3722,7 +3722,8 @@ proc createLayout(string $editor)
 	 separator -height $iconSize -horizontal false -style single 
                  renderTargetSeparator;
 
-     python("execfile('arnoldmenu')");
+     global string $ice_arnold_aov_menu_gen;
+     python("execfile('" + $ice_arnold_aov_menu_gen + "')");
     global string $gRenderPassLockUnlockImage[];
     int $forceRender = getRenderTargetForceDependenciesRender();
     iconTextButton -i1 $gRenderPassLockUnlockImage[$forceRender]
