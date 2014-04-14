@@ -12,8 +12,8 @@ def aovUI():
                                w = 125, h = 26, label = 'AOV',
                                cc = loadAOV, p = 'renderViewToolbar')
 
-    activeAOVS = cmds.ls(et='aiAOV')
-    aovsNames = ['beauty'] + [i.split('_', 1)[1] for i in activeAOVS]
+    activeAOVS = pc.ls(et='aiAOV')
+    aovsNames = ['beauty'] + [i.getAttr("name") for i in activeAOVS]
     
     for i, item in enumerate(aovsNames):
         cmds.menuItem(label=item)
